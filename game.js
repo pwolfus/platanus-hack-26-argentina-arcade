@@ -618,15 +618,6 @@ function createStartScreen(scene) {
     .setOrigin(0.5, 0);
   c.add(scene.startScreen.leaderboard);
 
-  // Marketing strip along the bottom
-  c.add(
-    scene.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT - 44, 'DIG · PUSH · BEAM · CEBAR · SURVIVE', {
-        fontFamily: 'monospace', fontSize: '11px', color: '#ffd84d', fontStyle: 'bold',
-      })
-      .setOrigin(0.5),
-  );
-
   const pressStart = scene.add
     .text(GAME_WIDTH / 2, GAME_HEIGHT - 26, 'JOYSTICK TO MOVE  ·  PRESS BUTTON 1 OR START', {
       fontFamily: 'monospace', fontSize: '11px', color: '#6f7a8a',
