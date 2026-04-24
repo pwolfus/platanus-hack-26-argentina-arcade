@@ -34,15 +34,11 @@ const MATE_SPAWN_MIN_MS = 8000;
 const MATE_SPAWN_MAX_MS = 15000;
 const RESPAWN_MS = 1100;
 const HIT_IFRAMES_MS = 1400;
-const LEVEL_COUNT = 3;
-const EMERALDS_PER_LAYER = [6, 8, 10];
-const JARS_PER_LAYER = [4, 5, 6];
+const LEVEL_COUNT = 10;
+const PAL = (l) => PALETTES[l % PALETTES.length];
 
 // Claude starburst — 16×16 RGBA, pale bg stripped to true transparent (~244B base64)
 const ICON_CLAUDE_SPARK = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAfElEQVR42qVSyREAIQgDq9mGbMUithUbshv3xQyDkWOWl8YQOUJkYo2+M5hEQ6CXEAo872RPbI2+NdYQGLWiP2kaQAS539riau9WnCtDtJUSER2lIZJXDVdX+LsF+8a3NUVzOIyEVmjJaZdqkpy12VwRm4zE0oEsXhaIOB9vB3Nbu0KyTgAAAABJRU5ErkJggg==';
-
-// Claude starburst — 16×16 blue variant for the title right star (~236B base64)
-const ICON_CLAUDE_BLUE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAeElEQVR42qVSyQ3AMAgDpusMGbAzZDv6QkLE4VB5JY5xOEwUYm3VDmYhCMwSSoH3Yc7E1lb1mCCwasV/Ih5ABLvf2uJp71GcJ0OMlRIRHaUhUlYNT1f4u4X4xrc1VXM4jIRWGMltl3qSnb3ZUpGYjMTagSw+Fqg4H2zzfGGGLPQ3AAAAAElFTkSuQmCC';
 
 // OpenAI/ChatGPT knot icon — 20×20 RGBA PNG, white-pixels-replaced-with-black (~247B raw / 332B base64)
 const ICON_OPENAI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAAvklEQVR42qVUQQ7AIAhjhid69ikefIpn/7hdtoUhBbeRmBiVtiBARLR7K/e6R2/k2s7NZLnX6WyURpGZgBeYBLAILJK0AuaZJuI3DhZJ7pVyr/dd0hcRmH5nhuyFOUp7gEU5ZS+cUdrkiJTeChFT9NtSuTxP3odIB+2M0rSd3QBrTjt4KZh+GamRex0q7JQVQEsVVGgVKyofz9jLh87tSiexvkRKouL/3cuIgHVXrI6pT/MwakWLBE7siAQpPgDbtanLjKnvQQAAAABJRU5ErkJggg==';
@@ -144,7 +140,6 @@ new Phaser.Game(config);
 
 function preload() {
   this.load.image('claude_spark', ICON_CLAUDE_SPARK);
-  this.load.image('claude_blue', ICON_CLAUDE_BLUE);
   this.load.image('openai', ICON_OPENAI);
   this.load.image('grok', ICON_GROK);
   this.load.image('cursor', ICON_CURSOR);
@@ -188,7 +183,6 @@ function create() {
   createPlayfield(scene);
   createEndGameUi(scene);
   createStartScreen(scene);
-  createLeaderboardScreen(scene);
   createControlsScreen(scene);
   createPauseScreen(scene);
   createControls(scene);
@@ -216,14 +210,6 @@ function update(time, delta) {
 
   if (phase === 'start') {
     handleStartMenu(scene, time);
-    return;
-  }
-
-  if (phase === 'leaderboard') {
-    if (consumeAnyPressedControl(scene, ['START1', 'START2', 'P1_1', 'P2_1', 'P1_2', 'P2_2'])) {
-      scene.leaderScreen.container.setVisible(false);
-      showStartScreen(scene);
-    }
     return;
   }
 
@@ -298,7 +284,7 @@ function createPlayfield(scene) {
 
 function redrawGrid(scene) {
   const gfx = scene.playfield.gridGfx;
-  const pal = PALETTES[scene.state.layer];
+  const pal = PAL(scene.state.layer);
   gfx.clear();
   // Tunnel base (dark, feels like cleared context)
   gfx.fillStyle(pal.tunnel, 1);
@@ -408,7 +394,7 @@ function createHud(scene) {
   scene.hud.objectiveBg = scene.add.rectangle(GAME_WIDTH / 2, 50, 280, 26, 0x0b1a2a, 0.9);
   scene.hud.objectiveBg.setStrokeStyle(2, COLORS.frame, 0.9);
   scene.hud.layer = scene.add
-    .text(GAME_WIDTH / 2, 40, 'LAYER 1/3 · PAMPA SHALLOWS', {
+    .text(GAME_WIDTH / 2, 40, `LAYER 1/${LEVEL_COUNT} · PAMPA SHALLOWS`, {
       fontFamily: 'monospace', fontSize: '11px', color: '#a8c0ff', fontStyle: 'bold',
     })
     .setOrigin(0.5, 0);
@@ -493,13 +479,26 @@ function createStartScreen(scene) {
   c.setDepth(15);
   scene.startScreen.container = c;
 
-  c.add(scene.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, COLORS.overlay, 0.97));
+  c.add(scene.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, COLORS.overlay, 1));
 
   // Scan-line grid overlay (AI aesthetic)
   const scan = scene.add.graphics();
   scan.fillStyle(0x1a2540, 0.18);
   for (let y = 0; y < GAME_HEIGHT; y += 3) scan.fillRect(0, y, GAME_WIDTH, 1);
   c.add(scan);
+
+  // Ambient dust motes drifting up in the side margins
+  for (let i = 0; i < 10; i += 1) {
+    const side = i < 5 ? -1 : 1;
+    const x = GAME_WIDTH / 2 + side * (260 + Math.random() * 130);
+    const y = Math.random() * GAME_HEIGHT;
+    const mote = scene.add.rectangle(x, y, 2, 2, 0xffd84d, 0.22);
+    c.add(mote);
+    scene.tweens.add({
+      targets: mote, y: y - 70, alpha: 0,
+      duration: 4000 + Math.random() * 2500, repeat: -1, ease: 'Linear',
+    });
+  }
 
   c.add(
     scene.add
@@ -509,39 +508,78 @@ function createStartScreen(scene) {
       .setOrigin(0.5),
   );
 
-  // Animated Claude spark flanking the title — orange (left) + dedicated blue sprite (right)
-  const bigScale = 56 / 16; // 16px source upscaled to ~56px display
-  const bigStar = scene.add.image(GAME_WIDTH / 2 - 210, 124, 'claude_spark');
-  bigStar.setScale(bigScale);
-  c.add(bigStar);
-  scene.tweens.add({ targets: bigStar, angle: 360, duration: 8000, repeat: -1, ease: 'Linear' });
-  scene.tweens.add({ targets: bigStar, scale: bigScale * 1.12, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+  // === Pixel-art bitmap CLAUDDER (DIGGER-style) ===
+  // 5×7 glyphs, one 5-bit number per row (MSB = leftmost pixel)
+  const FONT = {
+    C:[15,16,16,16,16,16,15],
+    L:[16,16,16,16,16,16,31],
+    A:[14,17,17,31,17,17,17],
+    U:[17,17,17,17,17,17,14],
+    D:[30,17,17,17,17,17,30],
+    E:[31,16,16,30,16,16,31],
+    R:[30,17,17,30,20,18,17],
+  };
+  const drawPixelTitle = (x0, y0, px, col) => {
+    const g = scene.add.graphics();
+    g.fillStyle(col, 1);
+    const txt = 'CLAUDDER';
+    const adv = 6 * px;
+    const w = txt.length * adv - px;
+    let xo = -w / 2;
+    for (const ch of txt) {
+      const rows = FONT[ch];
+      for (let r = 0; r < 7; r += 1) {
+        const row = rows[r];
+        for (let cc = 0; cc < 5; cc += 1) {
+          if (row & (1 << (4 - cc))) g.fillRect(xo + cc * px, -3.5 * px + r * px, px, px);
+        }
+      }
+      xo += adv;
+    }
+    g.setPosition(x0, y0);
+    c.add(g);
+    return g;
+  };
 
-  const bigStar2 = scene.add.image(GAME_WIDTH / 2 + 210, 124, 'claude_blue');
-  bigStar2.setScale(bigScale);
-  c.add(bigStar2);
-  scene.tweens.add({ targets: bigStar2, angle: -360, duration: 8000, repeat: -1, ease: 'Linear' });
-  scene.tweens.add({ targets: bigStar2, scale: bigScale * 1.12, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+  // Avatar helper (used for the centered prompt pair below the title)
+  const makeAvatar = (x0, y0, face) => {
+    const g = drawPromptBubble(scene, face);
+    g.setPosition(x0, y0).setScale(0.72);
+    c.add(g);
+    const cur = scene.add.rectangle(x0 - 9, y0 + 9, 15, 5, 0x0b0f18);
+    c.add(cur);
+    scene.tweens.add({ targets: cur, alpha: 0.1, duration: 460, yoyo: true, repeat: -1 });
+    return [g, cur];
+  };
 
-  const titleMain = scene.add
-    .text(GAME_WIDTH / 2, 124, 'CLAUDDER', {
-      fontFamily: 'monospace', fontSize: '72px', color: '#ffd84d', fontStyle: 'bold',
-      stroke: '#3a1a00', strokeThickness: 4,
-    })
-    .setOrigin(0.5);
-  c.add(titleMain);
-  scene.tweens.add({
-    targets: titleMain,
-    scale: 1.03,
-    duration: 1100,
-    yoyo: true,
-    repeat: -1,
-    ease: 'Sine.easeInOut',
-  });
+  // 3D drop-shadow + main title (bitmap pixels)
+  const titleShadow = drawPixelTitle(GAME_WIDTH / 2 + 5, 128, 10, 0x8a2a00);
+  const titleMain = drawPixelTitle(GAME_WIDTH / 2, 124, 10, 0xffd84d);
+
+  const titleGroup = [titleMain, titleShadow];
+  scene.tweens.add({ targets: titleGroup, scale: 1.05, duration: 1100, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+  scene.tweens.add({ targets: titleGroup, angle: 1.8, duration: 1700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+
+  // Sparkle bursts popping around the title
+  const spawnSparkle = () => {
+    const sp = scene.add.rectangle(
+      GAME_WIDTH / 2 + (Math.random() - 0.5) * 540,
+      90 + Math.random() * 90,
+      3, 3, 0xfff0c0, 1,
+    );
+    c.add(sp);
+    scene.tweens.add({
+      targets: sp, scale: 4, alpha: 0, angle: 60,
+      duration: 520, ease: 'Quad.easeOut',
+      onComplete: () => sp.destroy(),
+    });
+    scene.time.delayedCall(160 + Math.random() * 180, spawnSparkle);
+  };
+  spawnSparkle();
 
   c.add(
     scene.add
-      .text(GAME_WIDTH / 2, 176, 'DIGG THROUGH CONTEXT', {
+      .text(GAME_WIDTH / 2, 184, 'DIGG THROUGH CONTEXT', {
         fontFamily: 'monospace', fontSize: '16px', color: '#ffb347', fontStyle: 'bold',
       })
       .setOrigin(0.5),
@@ -558,13 +596,13 @@ function createStartScreen(scene) {
   // Enemy roster strip (shows what they'll face)
   const rosterLabel = scene.add
     .text(GAME_WIDTH / 2, 226, 'RIVAL AIs', {
-      fontFamily: 'monospace', fontSize: '9px', color: '#6f7a8a',
+      fontFamily: 'monospace', fontSize: '11px', color: '#a8c0ff', fontStyle: 'bold',
     })
     .setOrigin(0.5);
   c.add(rosterLabel);
   const rosterTypes = ['openai', 'gemini', 'grok'];
-  const spacing = 56;
-  const startX = GAME_WIDTH / 2 - ((rosterTypes.length - 1) * spacing) / 2;
+  const rosterSpacing = 56;
+  const rosterStartX = GAME_WIDTH / 2 - ((rosterTypes.length - 1) * rosterSpacing) / 2;
   rosterTypes.forEach((t, i) => {
     let g;
     if (t === 'openai' || t === 'grok') {
@@ -575,20 +613,14 @@ function createStartScreen(scene) {
       drawEnemyGraphic({ type: t, gfx: g });
       g.setScale(1.05);
     }
-    g.x = startX + i * spacing;
-    g.y = 250;
+    g.x = rosterStartX + i * rosterSpacing;
+    g.y = 254;
     c.add(g);
-    const lbl = scene.add
-      .text(startX + i * spacing, 270, enemyTypeLabel(t), {
-        fontFamily: 'monospace', fontSize: '9px', color: '#6f7a8a',
-      })
-      .setOrigin(0.5);
-    c.add(lbl);
     scene.tweens.add({ targets: g, y: g.y - 2, duration: 800 + i * 100, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
   });
 
   scene.startScreen.buttons = [];
-  const buttonLabels = ['PLAY', 'LEADERBOARD', 'CONTROLS'];
+  const buttonLabels = ['PLAY', 'CONTROLS'];
   for (let i = 0; i < buttonLabels.length; i += 1) {
     const y = 288 + i * 44;
     const bg = scene.add.rectangle(GAME_WIDTH / 2, y, 280, 38, COLORS.cell, 0.95);
@@ -603,23 +635,29 @@ function createStartScreen(scene) {
     scene.startScreen.buttons.push({ bg, label });
   }
 
+  // Two Claude prompt avatars flanking the PLAY/CONTROLS box (bobbing, blinking cursor)
+  const av1 = makeAvatar(130, 310, 1);
+  const av2 = makeAvatar(GAME_WIDTH - 130, 310, -1);
+  scene.tweens.add({ targets: av1, y: '-=10', duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+  scene.tweens.add({ targets: av2, y: '-=10', duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut', delay: 450 });
+
   c.add(
     scene.add
-      .text(GAME_WIDTH / 2, 428, 'TOP SCORES', {
+      .text(GAME_WIDTH / 2, 390, 'TOP SCORES', {
         fontFamily: 'monospace', fontSize: '12px', color: '#a8c0ff', fontStyle: 'bold',
       })
       .setOrigin(0.5),
   );
 
   scene.startScreen.leaderboard = scene.add
-    .text(GAME_WIDTH / 2, 448, 'NO SAVED SCORES YET', {
+    .text(GAME_WIDTH / 2, 410, 'NO SAVED SCORES YET', {
       fontFamily: 'monospace', fontSize: '13px', color: '#f7ffd8', align: 'center', lineSpacing: 4,
     })
     .setOrigin(0.5, 0);
   c.add(scene.startScreen.leaderboard);
 
   const pressStart = scene.add
-    .text(GAME_WIDTH / 2, GAME_HEIGHT - 26, 'JOYSTICK TO MOVE  ·  PRESS BUTTON 1 OR START', {
+    .text(GAME_WIDTH / 2, GAME_HEIGHT - 50, 'JOYSTICK TO MOVE  ·  PRESS BUTTON 1 OR START', {
       fontFamily: 'monospace', fontSize: '11px', color: '#6f7a8a',
     })
     .setOrigin(0.5);
@@ -634,39 +672,6 @@ function showStartScreen(scene) {
   scene.startScreen.container.setVisible(true);
   scene.state.menu.cursor = 0;
   updateStartMenuHighlight(scene);
-}
-
-function createLeaderboardScreen(scene) {
-  scene.leaderScreen = {};
-  const c = scene.add.container(0, 0);
-  c.setDepth(16);
-  scene.leaderScreen.container = c;
-
-  c.add(scene.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, COLORS.overlay, 0.98));
-  c.add(
-    scene.add
-      .text(GAME_WIDTH / 2, 90, 'LEADERBOARD', {
-        fontFamily: 'monospace', fontSize: '30px', color: '#ffd84d', fontStyle: 'bold',
-      })
-      .setOrigin(0.5),
-  );
-
-  scene.leaderScreen.list = scene.add
-    .text(GAME_WIDTH / 2, 170, '', {
-      fontFamily: 'monospace', fontSize: '20px', color: '#f7ffd8', align: 'center', lineSpacing: 12,
-    })
-    .setOrigin(0.5, 0);
-  c.add(scene.leaderScreen.list);
-
-  c.add(
-    scene.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT - 28, 'PRESS START TO GO BACK', {
-        fontFamily: 'monospace', fontSize: '12px', color: '#6f7a8a',
-      })
-      .setOrigin(0.5),
-  );
-
-  c.setVisible(false);
 }
 
 function createControlsScreen(scene) {
@@ -724,22 +729,10 @@ function showControlsScreen(scene) {
   scene.state.phase = 'controls';
 }
 
-function showLeaderboardScreen(scene) {
-  const lines = scene.state.highScores.length
-    ? scene.state.highScores.map((e, i) =>
-        `${String(i + 1).padStart(2, '0')}  ${e.name.padEnd(3, ' ')}  ${String(e.score).padStart(5, ' ')}  L${e.detail}`,
-      )
-    : ['NO SAVED SCORES YET'];
-  scene.leaderScreen.list.setText(lines.join('\n'));
-  scene.startScreen.container.setVisible(false);
-  scene.leaderScreen.container.setVisible(true);
-  scene.state.phase = 'leaderboard';
-}
-
 function refreshStartScreenLeaderboard(scene) {
   const lines = scene.state.highScores.length
     ? scene.state.highScores.map((e, i) =>
-        `${String(i + 1).padStart(2, '0')} ${e.name.padEnd(3, ' ')} ${String(e.score).padStart(5, ' ')} L${e.detail}`,
+        `${String(i + 1).padStart(2, '0')} ${e.name.padEnd(3, ' ')} ${String(e.score).padStart(6, ' ')} L${e.detail}`,
       )
     : ['NO SAVED SCORES YET'];
   scene.startScreen.leaderboard.setText(lines.join('\n'));
@@ -764,6 +757,7 @@ function handleStartMenu(scene, time) {
     menu.cooldown = time + 160;
     updateStartMenuHighlight(scene);
     playSound(scene, 'click');
+    startAmbientMusic(scene);
   }
   menu.lastAxis = axisY;
 
@@ -772,8 +766,6 @@ function handleStartMenu(scene, time) {
     startAmbientMusic(scene);
     if (menu.cursor === 0) {
       startMatch(scene);
-    } else if (menu.cursor === 1) {
-      showLeaderboardScreen(scene);
     } else {
       showControlsScreen(scene);
     }
@@ -1078,8 +1070,8 @@ function buildLevel(scene, layer) {
   const rng = Phaser.Math.RND;
 
   // Pick random tiles for emeralds (avoid starter tunnels and top row)
-  const emeraldCount = EMERALDS_PER_LAYER[layer];
-  const jarCount = JARS_PER_LAYER[layer];
+  const emeraldCount = 6 + layer;
+  const jarCount = 3 + Math.floor(layer / 2);
   const placed = new Set();
   placed.add('1,1'); placed.add('2,1'); placed.add('1,2');
   placed.add(`${COLS - 2},1`); placed.add(`${COLS - 3},1`); placed.add(`${COLS - 2},2`);
@@ -1129,7 +1121,7 @@ function buildLevel(scene, layer) {
   drawPlayer(scene, p1);
   drawPlayer(scene, p2);
   refreshHud(scene);
-  showLevelBanner(scene, `LAYER ${layer + 1} · ${PALETTES[layer].name}`, `COLLECT ALL ${scene.state.emeraldsTotal} INSIGHTS TO DESCEND`);
+  showLevelBanner(scene, `LAYER ${layer + 1} · ${PAL(layer).name}`, `COLLECT ALL ${scene.state.emeraldsTotal} INSIGHTS TO DESCEND`);
 }
 
 // ---------- entity spawns + draw ----------
@@ -1176,16 +1168,44 @@ function spawnMate(scene, c, r) {
   });
 }
 
+function drawPromptBubble(scene, face) {
+  const p = face > 0;
+  const g = scene.add.graphics();
+  g.fillStyle(p ? COLORS.p1Band : COLORS.p2Band, 1);
+  g.fillRoundedRect(-44, -32, 88, 64, 14);
+  g.fillStyle(p ? COLORS.p1 : COLORS.p2, 1);
+  g.fillRoundedRect(-40, -28, 80, 56, 12);
+  g.fillTriangle(40 * face, -8, 54 * face, 0, 40 * face, 8);
+  g.fillStyle(0x0b0f18, 1);
+  g.fillRect(-28, -16, 6, 6);
+  g.fillRect(-22, -10, 6, 6);
+  g.fillRect(-28, -4, 6, 6);
+  return g;
+}
+
 function drawMate(g) {
   g.clear();
-  g.fillStyle(COLORS.mateStraw, 1);
-  g.fillRect(2, -14, 3, 11);
+  // Gourd body — round calabash, deep brown
+  g.fillStyle(0x3f2210, 1);
+  g.fillCircle(0, 3, 10);
+  // Warmer side-lit shading (roundness cue)
   g.fillStyle(COLORS.mate, 1);
-  g.fillCircle(0, 2, 10);
-  g.fillStyle(0x6b3a12, 1);
-  g.fillCircle(0, 5, 8);
-  g.fillStyle(COLORS.mateLogo, 1);
-  g.fillRect(-2, 3, 4, 4);
+  g.fillCircle(-2, 2, 7);
+  // Dark opening rim on top
+  g.fillStyle(0x1f0c02, 1);
+  g.fillEllipse(0, -5, 15, 4);
+  // Yerba mate (heaped green leaves inside the rim)
+  g.fillStyle(0x5fa024, 1);
+  g.fillEllipse(0, -5, 13, 3);
+  g.fillStyle(0x8fc23a, 1);
+  g.fillRect(-3, -6, 2, 1);
+  g.fillRect(1, -6, 2, 1);
+  g.fillRect(-1, -7, 2, 1);
+  // Bombilla — silver straw tilted up-right, with flared mouthpiece
+  g.fillStyle(0xcfd5d8, 1);
+  g.fillTriangle(2, -5, 5, -13, 7, -13);
+  g.fillTriangle(2, -5, 4, -5, 7, -13);
+  g.fillRect(4, -15, 5, 2);
 }
 
 function spawnEnemy(scene, c, r, type) {
@@ -1949,13 +1969,58 @@ function advanceLevel(scene) {
   refreshHud(scene);
   if (nextLayer >= LEVEL_COUNT) {
     scene.hud.status.setText('CONTEXT RESTORED — VICTORY!');
-    showLevelBanner(scene, 'CONTEXT RESTORED', 'All 3 layers cleared — well dug, Claudder.');
-    scene.time.delayedCall(2000, () => finishMatch(scene));
+    showLevelBanner(scene, 'CONTEXT RESTORED', `All ${LEVEL_COUNT} layers cleared — well dug, Claudder.`);
+    scene.time.delayedCall(1800, () => playVictoryDance(scene));
   } else {
-    scene.hud.status.setText(`LAYER CLEAR — descending to ${PALETTES[nextLayer].name}`);
-    showLevelBanner(scene, `LAYER ${scene.state.layer + 1} CLEAR  +${bonus}`, `Descending into ${PALETTES[nextLayer].name}…`);
+    scene.hud.status.setText(`LAYER CLEAR — descending to ${PAL(nextLayer).name}`);
+    showLevelBanner(scene, `LAYER ${scene.state.layer + 1} CLEAR  +${bonus}`, `Descending into ${PAL(nextLayer).name}…`);
     scene.time.delayedCall(1100, () => buildLevel(scene, nextLayer));
   }
+}
+
+function playVictoryDance(scene) {
+  scene.state.phase = 'dance';
+  const c = scene.add.container(0, 0);
+  c.setDepth(30);
+  c.add(scene.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x050810, 1));
+
+  c.add(
+    scene.add.text(GAME_WIDTH / 2, 120, 'NEVER GIVE UP!', {
+      fontFamily: 'monospace', fontSize: '52px', color: '#ffd84d', fontStyle: 'bold',
+    }).setOrigin(0.5),
+  );
+
+  // Male dancer: pastel clothes, sunglasses, 3 cycling poses on the beat
+  const d = scene.add.graphics();
+  d.setPosition(GAME_WIDTH / 2, 400).setScale(6);
+  c.add(d);
+  const POSES = [
+    [[-10, -17, 3, 8], [7, -17, 3, 8]],   // arms up (celebrate)
+    [[-13, -7, 7, 3], [6, -7, 7, 3]],     // arms out wide
+    [[-9, -6, 3, 8], [6, -6, 3, 8]],      // arms down
+  ];
+  let pose = 0;
+  const drawPose = () => {
+    d.clear();
+    d.fillStyle(0x3a2010, 1); d.fillRect(-5, -20, 10, 3);    // hair
+    d.fillStyle(0xfad6a0, 1); d.fillCircle(0, -15, 5);       // head
+    d.fillStyle(0, 1); d.fillRect(-5, -16, 10, 2);           // sunglasses
+    d.fillStyle(0xc8b0ff, 1); d.fillRect(-6, -9, 12, 10);    // pastel shirt
+    d.fillStyle(0x9fc8e8, 1); d.fillRect(-6, 1, 12, 8);      // pastel pants
+    d.fillStyle(0xfad6a0, 1);
+    POSES[pose].forEach((a) => d.fillRect(...a));
+  };
+  drawPose();
+  scene.time.addEvent({
+    delay: 500, repeat: -1,
+    callback: () => { pose = (pose + 1) % 3; drawPose(); },
+  });
+
+  scene.time.delayedCall(9000, () => {
+    c.destroy();
+    if (scene.state.players) finishMatch(scene);
+    else showStartScreen(scene);
+  });
 }
 
 function finishMatch(scene) {
@@ -1980,7 +2045,7 @@ function finishMatch(scene) {
 
   scene.endGame.summary.setText(
     `P1 ${p1.score}    P2 ${p2.score}    TOTAL ${total}\n` +
-    `LAYERS CLEARED: ${scene.state.layer}/${LEVEL_COUNT}  ·  BEST: ${winnerLabel}`,
+    `LAYERS CLEARED: ${scene.state.layer + 1}/${LEVEL_COUNT}  ·  BEST: ${winnerLabel}`,
   );
   scene.endGame.saveStatus.setText(scene.state.saveStatus);
   refreshNameEntry(scene);
@@ -2035,7 +2100,7 @@ function refreshHud(scene) {
   scene.hud.p2Score.setText(`${p2.score}`);
   scene.hud.p2Lives.setText(heartsText(p2.lives));
   scene.hud.layer.setText(
-    `LAYER ${scene.state.layer + 1}/${LEVEL_COUNT} · ${PALETTES[scene.state.layer].name}`,
+    `LAYER ${scene.state.layer + 1}/${LEVEL_COUNT} · ${PAL(scene.state.layer).name}`,
   );
   const collected = scene.state.emeraldsTotal - scene.state.emeralds.length;
   if (scene.hud.progress) {
@@ -2184,7 +2249,7 @@ function refreshLeaderboard(scene) {
   const lines = scene.state.highScores.length
     ? scene.state.highScores.map((entry, index) => {
         const rank = String(index + 1).padStart(2, '0');
-        const score = String(entry.score).padStart(5, ' ');
+        const score = String(entry.score).padStart(6, ' ');
         return `${rank} ${entry.name.padEnd(3, ' ')} ${score} L${entry.detail}`;
       })
     : ['NO SAVED SCORES YET'];
@@ -2253,120 +2318,116 @@ function startAmbientMusic(scene) {
     const ctx = scene.sound.context;
     if (!ctx) return;
 
+    // Master bus
     const out = ctx.createGain();
-    out.gain.value = 0.13;
+    out.gain.value = 0.22;
     out.connect(ctx.destination);
 
-    // Lo-fi feedback delay — "dusty data room"
-    const dly = ctx.createDelay(2);
-    const dlFb = ctx.createGain();
-    dly.delayTime.value = 0.37;
-    dlFb.gain.value = 0.3;
-    dly.connect(dlFb);
-    dlFb.connect(dly);
-    dlFb.connect(out);
+    // 120 BPM, I-V-vi-IV in D major (D - A - Bm - G). Chorus fits exactly 1 loop.
+    const BEAT = 0.5;
+    const CHORD_BEATS = 4;
+    const BAR = BEAT * CHORD_BEATS;
+    const LOOP = BAR * 4;
 
-    // Pad filter (muffled, AI-processing vibe)
-    const padFilt = ctx.createBiquadFilter();
-    padFilt.type = 'lowpass';
-    padFilt.frequency.value = 440;
-    padFilt.Q.value = 1.2;
-    padFilt.connect(out);
-    padFilt.connect(dly);
+    const BASS_ROOTS = [73.42, 110, 123.47, 98]; // D2, A2, B2, G2
 
-    const lfo = ctx.createOscillator();
-    const lfoG = ctx.createGain();
-    lfo.frequency.value = 0.065;
-    lfoG.gain.value = 260;
-    lfo.connect(lfoG);
-    lfoG.connect(padFilt.frequency);
-    lfo.start();
+    const CHORDS = [
+      [146.83, 185, 220],        // D
+      [220, 277.18, 329.63],     // A
+      [246.94, 293.66, 369.99],  // Bm
+      [196, 246.94, 293.66],     // G
+    ];
 
-    // E minor-ish pad cluster, detuned
-    [
-      [82.4, 0, 'sawtooth'], [82.4, 9, 'sawtooth'], [82.4, -8, 'sawtooth'],
-      [146.83, 0, 'triangle'], [196, 4, 'triangle'], [233.08, -6, 'triangle'],
-    ].forEach(([f, d, type]) => {
-      const osc = ctx.createOscillator();
-      const g = ctx.createGain();
-      osc.type = type; osc.frequency.value = f; osc.detune.value = d;
-      g.gain.value = 0.022;
-      osc.connect(g); g.connect(padFilt);
-      osc.start();
-    });
+    // Lead: [freq, duration]. Chorus from game-tune.mid (ch15, t=45.44s), transposed to A major.
+    // Notes — A4=440 B4=493.88 C#5=554.37 D5=587.33 E5=659.25 F#5=739.99
+    const LEAD = [
+      [440,.125],[493.88,.125],[587.33,.125],[493.88,.125],[739.99,.5],[739.99,.25],[659.25,.75],
+      [440,.125],[493.88,.125],[587.33,.125],[493.88,.125],[659.25,.5],[659.25,.25],[587.33,.375],
+      [554.37,.125],[493.88,.25],
+      [440,.125],[493.88,.125],[587.33,.125],[493.88,.125],[587.33,.5],[659.25,.25],[554.37,.375],
+      [493.88,.125],[440,.25],[440,.25],[659.25,.75],[587.33,1],
+    ];
 
-    // Deep sub pulse on a 1.4s cycle
-    function scheduleSub(t) {
-      const osc = ctx.createOscillator();
-      const g = ctx.createGain();
-      osc.type = 'sine'; osc.frequency.value = 47;
-      osc.connect(g); g.connect(out);
-      g.gain.setValueAtTime(0.2, t);
-      g.gain.exponentialRampToValueAtTime(0.001, t + 0.62);
-      osc.start(t); osc.stop(t + 0.7);
-      scene.time.delayedCall(1400, () => scheduleSub(t + 1.4));
-    }
-
-    // Lo-fi arp — sparse minor pentatonic in 4s loops
-    const ARP = [82.4, 110, 146.8, 164.8, 220, 164.8, 146.8, 110];
-    const STEP = 0.5;
-    const ALEN = ARP.length * STEP;
-    function scheduleArp(t0) {
-      ARP.forEach((freq, i) => {
-        const t = t0 + i * STEP;
+    // Drum-ish kick on every beat (short sine thump)
+    function scheduleKicks(t0) {
+      const steps = Math.round(LOOP / BEAT);
+      for (let i = 0; i < steps; i += 1) {
+        const t = t0 + i * BEAT;
         const osc = ctx.createOscillator();
         const g = ctx.createGain();
-        osc.type = 'triangle';
-        osc.frequency.value = freq;
-        osc.connect(g); g.connect(padFilt); g.connect(dly);
-        g.gain.setValueAtTime(0.001, t);
-        g.gain.linearRampToValueAtTime(0.033, t + 0.02);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + STEP * 0.7);
-        osc.start(t); osc.stop(t + STEP * 0.75);
-      });
-      scene.time.delayedCall((ALEN - 0.05) * 1000, () => scheduleArp(t0 + ALEN));
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(120, t);
+        osc.frequency.exponentialRampToValueAtTime(50, t + 0.12);
+        osc.connect(g); g.connect(out);
+        g.gain.setValueAtTime(0.35, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+        osc.start(t); osc.stop(t + 0.22);
+      }
+      scene.time.delayedCall(LOOP * 1000, () => scheduleKicks(t0 + LOOP));
     }
 
-    // "Data-tick" burst — short high clicks evoking AI processing
-    function scheduleDataTick() {
-      const now = ctx.currentTime;
-      const count = 2 + Math.floor(Math.random() * 3);
-      for (let i = 0; i < count; i += 1) {
-        const t = now + i * 0.07;
+    // Bass: eighth-note root pulses under each chord
+    function scheduleBass(t0) {
+      BASS_ROOTS.forEach((f, bar) => {
+        for (let k = 0; k < CHORD_BEATS * 2; k += 1) {
+          const t = t0 + bar * BAR + k * (BEAT / 2);
+          const osc = ctx.createOscillator();
+          const g = ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.value = f;
+          osc.connect(g); g.connect(out);
+          g.gain.setValueAtTime(0.18, t);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+          osc.start(t); osc.stop(t + 0.25);
+        }
+      });
+      scene.time.delayedCall(LOOP * 1000, () => scheduleBass(t0 + LOOP));
+    }
+
+    // Chord pad (sustained triad per bar, warm saw)
+    function scheduleChords(t0) {
+      CHORDS.forEach((chord, bar) => {
+        const start = t0 + bar * BAR;
+        chord.forEach((f) => {
+          const osc = ctx.createOscillator();
+          const g = ctx.createGain();
+          osc.type = 'sawtooth';
+          osc.frequency.value = f;
+          osc.connect(g); g.connect(out);
+          g.gain.setValueAtTime(0.001, start);
+          g.gain.linearRampToValueAtTime(0.06, start + 0.08);
+          g.gain.setValueAtTime(0.06, start + BAR - 0.1);
+          g.gain.exponentialRampToValueAtTime(0.001, start + BAR);
+          osc.start(start); osc.stop(start + BAR + 0.05);
+        });
+      });
+      scene.time.delayedCall(LOOP * 1000, () => scheduleChords(t0 + LOOP));
+    }
+
+    // Lead melody (square wave, punchy)
+    function scheduleLead(t0) {
+      let cursor = 0;
+      LEAD.forEach((n) => {
+        const t = t0 + cursor;
         const osc = ctx.createOscillator();
         const g = ctx.createGain();
         osc.type = 'square';
-        osc.frequency.value = 1800 + Math.random() * 900;
+        osc.frequency.value = n[0];
         osc.connect(g); g.connect(out);
-        g.gain.setValueAtTime(0.018, t);
-        g.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
-        osc.start(t); osc.stop(t + 0.04);
-      }
-      scene.time.delayedCall(2200 + Math.random() * 3200, scheduleDataTick);
-    }
-
-    // Modem sweep — slow pitch-rise-then-fall every ~18s (AI waking up)
-    function scheduleSweep() {
-      const now = ctx.currentTime;
-      const osc = ctx.createOscillator();
-      const g = ctx.createGain();
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(180, now);
-      osc.frequency.linearRampToValueAtTime(520, now + 0.9);
-      osc.frequency.linearRampToValueAtTime(220, now + 1.8);
-      osc.connect(g); g.connect(dly); g.connect(padFilt);
-      g.gain.setValueAtTime(0.001, now);
-      g.gain.linearRampToValueAtTime(0.04, now + 0.15);
-      g.gain.exponentialRampToValueAtTime(0.001, now + 1.9);
-      osc.start(now); osc.stop(now + 2);
-      scene.time.delayedCall(17000 + Math.random() * 6000, scheduleSweep);
+        g.gain.setValueAtTime(0.001, t);
+        g.gain.linearRampToValueAtTime(0.09, t + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.001, t + n[1]);
+        osc.start(t); osc.stop(t + n[1] + 0.05);
+        cursor += n[1];
+      });
+      scene.time.delayedCall(cursor * 1000, () => scheduleLead(t0 + cursor));
     }
 
     const t0 = ctx.currentTime + 0.25;
-    scheduleSub(t0);
-    scheduleArp(t0 + 0.2);
-    scheduleDataTick();
-    scene.time.delayedCall(9000, scheduleSweep);
+    scheduleKicks(t0);
+    scheduleBass(t0);
+    scheduleChords(t0);
+    scheduleLead(t0);
   } catch (_) {}
 }
 
